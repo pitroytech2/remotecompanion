@@ -1369,6 +1369,21 @@ static BOOL save_blacklist(NSArray *list) {
     return [g_blacklist writeToFile:path atomically:YES];
 }
 
+// Status-bar-only gate; no cached foreground decision.
+static NSString *RCStatusForeground(void) {
+    if (![NSThread isMainThread]) return nil;
+    id sb = [UIApplication sharedApplication];
+    if (![sb respondsToSelector:@selector(_accessibilityFrontMostApplication)]) return nil;
+    id app = [sb _accessibilityFrontMostApplication];
+    return app ? [app bundleIdentifier] : @"com.apple.springboard";
+}
+static BOOL RCStatusExcluded(void) {
+    NSString *bundle = RCStatusForeground();
+    if (!bundle) return YES;
+    id list = g_triggerConfig[@"statusBarExcludedApps"];
+    return [list isKindOfClass:[NSArray class]] && [list containsObject:bundle];
+}
+
 static BOOL RC_IsForegroundAppExcluded() {
     static BOOL cachedResult = NO;
     static NSTimeInterval lastCheck = 0;
@@ -2015,6 +2030,7 @@ static void register_simulation_observers() {
 
 // Execute all actions for a trigger
 void RCExecuteTrigger(NSString *triggerKey) {
+    if ([triggerKey hasPrefix:@"trigger_statusbar_"] && RCStatusExcluded()) return;
     // Check for foreground exclusions (Safety/Blacklist)
     if (RC_IsForegroundAppExcluded()) {
         SRLog(@"Triggers SUPPRESSED for frontmost application (Excluded/Blacklisted)");
@@ -10561,6 +10577,7 @@ static void setup_background_hid_listener() {
 static NSTimer *g_statusBarHoldTimer = nil;
 static BOOL g_statusBarHoldTriggered = NO;
 static NSString *g_pendingStatusBarTrigger = nil;
+static NSString *g_statusBarOwner = nil;
 
 // Swipe tracking
 static CGFloat g_statusBarSwipeStartX = 0;
@@ -10585,6 +10602,12 @@ static NSTimeInterval g_lastStatusBarDoubleTapTime = 0;
     if (event.type == UIEventTypeTouches) {
         UITouch *touch = [[event allTouches] anyObject];
         
+        if (g_statusBarTouchActive && (RCStatusExcluded() || ![g_statusBarOwner isEqualToString:RCStatusForeground()])) {
+            [g_statusBarHoldTimer invalidate];
+            g_statusBarHoldTimer = nil;
+            g_statusBarTouchActive = NO;
+            g_pendingStatusBarTrigger = nil;
+        }
         if (touch && touch.phase == UITouchPhaseBegan) {
             UIWindow *window = nil;
             #pragma clang diagnostic push
@@ -10633,7 +10656,8 @@ static NSTimeInterval g_lastStatusBarDoubleTapTime = 0;
 
             SRLog(@"[Debug] TouchBegan phys=(%.1f, %.1f) orient=%ld (T=%d B=%d)", loc.x, loc.y, (long)orientation, inTopRegion, inBottomRegion);
             
-            if (inTopRegion) {
+            if (inTopRegion && !RCStatusExcluded()) {
+                g_statusBarOwner = RCStatusForeground();
                 g_statusBarSwipeStartX = loc.x;
                 g_statusBarSwipeStartY = loc.y;
                 g_statusBarTouchActive = YES;
@@ -10699,6 +10723,11 @@ static NSTimeInterval g_lastStatusBarDoubleTapTime = 0;
                         g_statusBarHoldTimer = nil;
                         
                         // Ignore stale timer callbacks (e.g., touch already ended/cancelled).
+                        if (RCStatusExcluded() || ![g_statusBarOwner isEqualToString:RCStatusForeground()]) {
+                            g_statusBarTouchActive = NO;
+                            g_pendingStatusBarTrigger = nil;
+                            return;
+                        }
                         if (!g_statusBarTouchActive || g_statusBarSwipeTriggered || !g_pendingStatusBarTrigger) {
                             return;
                         }
