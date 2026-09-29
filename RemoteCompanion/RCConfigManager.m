@@ -855,6 +855,15 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     }
 
     NSString *originalCmd = [(NSString *)cmdId stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if ([originalCmd hasPrefix:@"quickactions run "]) {
+        NSData *data = [[NSData alloc] initWithBase64EncodedString:[originalCmd substringFromIndex:17] options:0];
+        id item = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+        if ([item isKindOfClass:NSDictionary.class] && [item[@"bundle"] isKindOfClass:NSString.class]) {
+            NSString *title = [item[@"title"] isKindOfClass:NSString.class] ? item[@"title"] : @"Quick Shortcut";
+            return [NSString stringWithFormat:@"%@ > %@", [self nameForBundleId:item[@"bundle"]], title];
+        }
+        return @"App Quick Shortcut";
+    }
     NSString *cmd = [originalCmd lowercaseString];
     NSDictionary *names = @{
         @"play": @"Play",
