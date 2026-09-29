@@ -1,3 +1,4 @@
+#import "RCServerClient.h"
 #import "RCActionsViewController.h"
 #import "RCConfigManager.h"
 #import "RCActionPickerViewController.h"
@@ -752,6 +753,34 @@ static id g_actionClipboard = nil;
             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                 [self presentViewController:alert animated:YES completion:nil];
             });
+        } else if ([action isEqualToString:@"__APP_QUICK_SHORTCUT__"]) {
+            RCAppPickerViewController *picker = [RCAppPickerViewController new];
+            picker.suppressAutoPop = YES;
+            __weak RCAppPickerViewController *weakPicker = picker;
+            picker.onAppSelected = ^(NSString *name, NSString *bundle) {
+                [[RCServerClient sharedClient] executeCommand:[@"quickactions list " stringByAppendingString:bundle] completion:^(NSString *output, NSError *error) {
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                        NSData *bytes = [output dataUsingEncoding:NSUTF8StringEncoding];
+                        id result = bytes ? [NSJSONSerialization JSONObjectWithData:bytes options:0 error:nil] : nil;
+                        NSArray *items = [result isKindOfClass:NSDictionary.class] ? result[@"items"] : nil;
+                        if (![items isKindOfClass:NSArray.class]) items = @[];
+                        UIAlertController *menu = [UIAlertController alertControllerWithTitle:name message:items.count ? @"Choose App Quick Shortcut" : @"On Home Screen, long-press this app icon once, then return and select the app again. The shortcut list is refreshed after each respring." preferredStyle:UIAlertControllerStyleAlert];
+                        for (NSDictionary *item in items) {
+                            if (![item isKindOfClass:NSDictionary.class] || ![item[@"type"] isKindOfClass:NSString.class]) continue;
+                            [menu addAction:[UIAlertAction actionWithTitle:item[@"title"] ?: item[@"type"] style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
+                                NSData *data = [NSJSONSerialization dataWithJSONObject:@{@"bundle":bundle,@"type":item[@"type"],@"title":item[@"title"] ?: @""} options:0 error:nil];
+                                [self.actions addObject:[@"quickactions run " stringByAppendingString:[data base64EncodedStringWithOptions:0]]];
+                                [self saveActions]; [self.tableView reloadData];
+                                [weakPicker dismissViewControllerAnimated:YES completion:nil];
+                            }]];
+                        }
+                        [menu addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+                        [weakPicker presentViewController:menu animated:YES completion:nil];
+                    });
+                }];
+            };
+            UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:picker];
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{ [self presentViewController:nav animated:YES completion:nil]; });
         } else if ([action isEqualToString:@"__OPEN_APP__"]) {
             RCAppPickerViewController *appPicker = [[RCAppPickerViewController alloc] init];
             appPicker.onAppSelected = ^(NSString *name, NSString *bundleId) {

@@ -33,9 +33,58 @@ static void RCQARecord(id data) {
     if (RCQAEvents.count >= 128) [RCQAEvents removeObjectAtIndex:0];
     [RCQAEvents addObject:data];
 }
+static NSMutableDictionary *RCQACatalog;
+static NSMapTable *RCQAViews;
+static BOOL RCQAExcludedType(NSString *type) {
+    return [type hasPrefix:@"com.apple.springboardhome.application-shortcut-item."] ||
+        [type isEqualToString:@"CustomAddToFolderItem"] ||
+        [type hasPrefix:@"com.opa334.choicy."] || [type hasPrefix:@"com.sergy.immortalizer."];
+}
+static void RCQARemember(id view, id raw) {
+    NSString *bundle = RCQAString(RCQAGet(RCQAGet(view,@"icon"),@"applicationBundleID"));
+    if (!bundle.length || ![raw isKindOfClass:NSArray.class]) return;
+    if (!RCQACatalog) RCQACatalog = [NSMutableDictionary dictionary];
+    if (!RCQAViews) RCQAViews = [NSMapTable strongToWeakObjectsMapTable];
+    NSMutableArray *items = [NSMutableArray array];
+    for (id item in raw) {
+        NSString *type = RCQAString(RCQAGet(item,@"type"));
+        if (type.length && !RCQAExcludedType(type) && items.count < 32) [items addObject:item];
+    }
+    if (RCQACatalog.count >= 512 && !RCQACatalog[bundle]) return;
+    RCQACatalog[bundle] = items;
+    [RCQAViews setObject:view forKey:bundle];
+}
+static NSString *RCQARun(NSString *encoded) {
+    NSData *data = [[NSData alloc] initWithBase64EncodedString:encoded options:0];
+    id request = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+    if (![request isKindOfClass:NSDictionary.class]) return @"Invalid Quick Shortcut request";
+    NSString *bundle = RCQAString(request[@"bundle"]), *type = RCQAString(request[@"type"]);
+    id view = [RCQAViews objectForKey:bundle];
+    if (!view || ![RCQAString(RCQAGet(RCQAGet(view,@"icon"),@"applicationBundleID")) isEqual:bundle]) return @"Open this app's Home Screen menu once to refresh Quick Shortcuts.";
+    id lock = RCQAGet(NSClassFromString(@"SBLockScreenManager"),@"sharedInstance");
+    SEL locked = NSSelectorFromString(@"isUILocked");
+    NSMethodSignature *ls = [lock methodSignatureForSelector:locked];
+    if (!ls || ls.numberOfArguments != 2 || (ls.methodReturnType[0] != 'B' && ls.methodReturnType[0] != 'c')) return @"Lock status unavailable";
+    if (((BOOL (*)(id,SEL))objc_msgSend)(lock,locked)) return @"Unlock the phone first";
+    RCQARemember(view,RCQAGet(view,@"applicationShortcutItems"));
+    id selected = nil;
+    for (id item in RCQACatalog[bundle]) if ([RCQAString(RCQAGet(item,@"type")) isEqual:type]) { selected=item; break; }
+    if (!selected) return @"Quick Shortcut no longer available";
+    Class cls = NSClassFromString(@"SBIconView");
+    SEL action = NSSelectorFromString(@"activateShortcut:withBundleIdentifier:forIconView:");
+    NSMethodSignature *sig = [cls methodSignatureForSelector:action];
+    if (!sig || sig.numberOfArguments != 5 || sig.methodReturnType[0] != 'v') return @"Native Quick Shortcut activation unavailable";
+    for (NSUInteger i=2;i<5;i++) if ([sig getArgumentTypeAtIndex:i][0]!='@') return @"Unsupported activation signature";
+    @try {
+        ((void (*)(id,SEL,id,id,id))objc_msgSend)(cls,action,selected,bundle,view);
+        RCQARecord(@{@"event":@"activation_dispatched",@"bundle":bundle,@"type":type});
+        return @"Quick Shortcut dispatched";
+    } @catch (__unused NSException *e) { return @"Quick Shortcut activation failed"; }
+}
 static id (*RCQAOriginalItems)(id, SEL);
 static id RCQAObservedItems(id object, SEL selector) {
     id result = RCQAOriginalItems(object, selector);
+    RCQARemember(object, result);
     if (RCQACapturing) {
         NSArray *items = RCQAItems(result);
         if (items.count) {
@@ -61,6 +110,12 @@ static void RCQAInstallProbe(void) {
     RCQARecord(@{@"event":@"probe", @"selector":@"SBIconView applicationShortcutItems", @"installed":@(installed)});
 }
 static NSString *RCQACommand(NSString *command) {
+    if ([command hasPrefix:@"quickactions list "]) {
+        NSString *bundle = [command substringFromIndex:18];
+        return RCQAJSON(@{@"items":RCQAItems(RCQACatalog[bundle])});
+    }
+    if ([command hasPrefix:@"quickactions run "]) return RCQARun([command substringFromIndex:17]);
+
     if ([command isEqualToString:@"quickactions stop"]) RCQACapturing = NO;
     else if ([command isEqualToString:@"quickactions scan"]) {
         RCQAEvents = [NSMutableArray array];

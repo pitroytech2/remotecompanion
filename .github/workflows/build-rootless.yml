@@ -22,8 +22,8 @@ jobs:
       - name: Build unified app and tweak
         run: |
           set -eu
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 3.6.3+pitroy2" RemoteCompanion/Info.plist
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 3.6.3+pitroy2" RemoteCompanion/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 3.6.3+pitroy3" RemoteCompanion/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion 3.6.3+pitroy3" RemoteCompanion/Info.plist
           make -C RemoteCompanion stage THEOS_PACKAGE_SCHEME= TARGET=iphone:clang:16.5:14.0
           mkdir -p Tweak/layout/Applications Tweak/layout/usr/bin
           cp -R RemoteCompanion/.theos/_/Applications/RemoteCompanion.app Tweak/layout/Applications/
