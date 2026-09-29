@@ -755,6 +755,7 @@ static id g_actionClipboard = nil;
             });
         } else if ([action isEqualToString:@"__APP_QUICK_SHORTCUT__"]) {
             RCAppPickerViewController *picker = [RCAppPickerViewController new];
+            picker.title = @"Open Apps QUICK SHORTCUTS";
             picker.suppressAutoPop = YES;
             __weak RCAppPickerViewController *weakPicker = picker;
             picker.onAppSelected = ^(NSString *name, NSString *bundle) {
@@ -771,7 +772,9 @@ static id g_actionClipboard = nil;
                                 NSData *data = [NSJSONSerialization dataWithJSONObject:@{@"bundle":bundle,@"type":item[@"type"],@"title":item[@"title"] ?: @""} options:0 error:nil];
                                 [self.actions addObject:[@"quickactions run " stringByAppendingString:[data base64EncodedStringWithOptions:0]]];
                                 [self saveActions]; [self.tableView reloadData];
-                                [weakPicker dismissViewControllerAnimated:YES completion:nil];
+                                // Dismiss from the owner of the entire modal navigation stack,
+                                // not the app picker (which is presenting the shortcut alert).
+                                [self dismissViewControllerAnimated:YES completion:nil];
                             }]];
                         }
                         [menu addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];

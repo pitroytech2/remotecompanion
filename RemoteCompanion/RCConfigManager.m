@@ -1309,6 +1309,15 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
     if ([cmd hasPrefix:@"Lua "] || [cmd hasPrefix:@"lua_eval "] || [cmd hasPrefix:@"lua-eval "] || [cmd hasPrefix:@"lua "]) return @"scroll.fill";
     if ([cmd hasPrefix:@"spotify "]) return @"music.note";
     if ([cmd isEqualToString:@"home"]) return @"house.fill";
+    // Decode original command: base64 must not be lowercased.
+    if ([(NSString *)cmdId hasPrefix:@"quickactions run "]) {
+        NSData *data = [[NSData alloc] initWithBase64EncodedString:[(NSString *)cmdId substringFromIndex:17] options:0];
+        id item = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:nil] : nil;
+        if ([item isKindOfClass:NSDictionary.class] && [item[@"bundle"] isKindOfClass:NSString.class] && [item[@"bundle"] length]) {
+            return [@"USER_APP:" stringByAppendingString:item[@"bundle"]];
+        }
+        return @"bolt.fill";
+    }
     if ([cmd hasPrefix:@"uiopen "]) return [NSString stringWithFormat:@"USER_APP:%@", [cmd substringFromIndex:7]];
     if ([cmd hasPrefix:@"kill "]) return [NSString stringWithFormat:@"USER_APP:%@", [cmd substringFromIndex:5]];
     // Touch gesture prefix icons
