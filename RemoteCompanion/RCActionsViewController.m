@@ -755,7 +755,7 @@ static id g_actionClipboard = nil;
             });
         } else if ([action isEqualToString:@"__APP_QUICK_SHORTCUT__"]) {
             RCAppPickerViewController *picker = [RCAppPickerViewController new];
-            picker.title = @"Open Apps QUICK SHORTCUTS";
+            picker.title = @"Open Apps Quick Shortcuts";
             picker.suppressAutoPop = YES;
             __weak RCAppPickerViewController *weakPicker = picker;
             picker.onAppSelected = ^(NSString *name, NSString *bundle) {
@@ -765,7 +765,7 @@ static id g_actionClipboard = nil;
                         id result = bytes ? [NSJSONSerialization JSONObjectWithData:bytes options:0 error:nil] : nil;
                         NSArray *items = [result isKindOfClass:NSDictionary.class] ? result[@"items"] : nil;
                         if (![items isKindOfClass:NSArray.class]) items = @[];
-                        UIAlertController *menu = [UIAlertController alertControllerWithTitle:name message:items.count ? @"Choose App Quick Shortcut" : @"On Home Screen, long-press this app icon once, then return and select the app again. The shortcut list is refreshed after each respring." preferredStyle:UIAlertControllerStyleAlert];
+                        UIAlertController *menu = [UIAlertController alertControllerWithTitle:name message:items.count ? @"Choose App Quick Shortcut" : @"On Home Screen, long-press this app icon once, then return and select the app again. Registered shortcuts are saved for subsequent launches." preferredStyle:UIAlertControllerStyleAlert];
                         for (NSDictionary *item in items) {
                             if (![item isKindOfClass:NSDictionary.class] || ![item[@"type"] isKindOfClass:NSString.class]) continue;
                             [menu addAction:[UIAlertAction actionWithTitle:item[@"title"] ?: item[@"type"] style:UIAlertActionStyleDefault handler:^(UIAlertAction *a) {
