@@ -4120,6 +4120,8 @@ static NSString *rc_taptest_status_string(void) {
     return status ?: @"taptest unavailable\n";
 }
 
+#import "RCQuickActions.h"
+
 static NSString *rc_handle_taptest_command(NSString *cleanCmd) {
     NSArray<NSString *> *parts = rc_split_whitespace(cleanCmd);
     NSString *subcommand = parts.count >= 2 ? [parts[1] lowercaseString] : @"status";
@@ -5789,6 +5791,13 @@ static NSString *handle_command(NSString *cmd) {
         return @"Error: Invalid command\n";
     }
     NSString *cleanCmd = [cmd stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if ([cleanCmd hasPrefix:@"quickactions "]) {
+        __block NSString *report;
+        void (^work)(void) = ^{ report = RCQACommand(cleanCmd); };
+        if ([NSThread isMainThread]) work(); else dispatch_sync(dispatch_get_main_queue(), work);
+        return report;
+    }
+
     if (cleanCmd.length == 0) return @"Error: Empty command\n";
     SRLog(@"Received command: %@", cleanCmd);
     
