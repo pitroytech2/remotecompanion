@@ -37,24 +37,49 @@ static void RCQALoad(void) {
     RCQASaved = [saved isKindOfClass:NSDictionary.class] ? [saved mutableCopy] : [NSMutableDictionary dictionary];
     RCQASaveQueue = dispatch_queue_create("remotecompanion.quickshortcuts.save", DISPATCH_QUEUE_SERIAL);
 }
+// Persist property-list values, not private framework object archives.
+// A private shortcut class may implement NSCoding but not NSSecureCoding.
+static NSDictionary *RCQASnapshot(id item) {
+    NSMutableDictionary *row = [NSMutableDictionary dictionary];
+    for (NSString *key in @[@"type", @"localizedTitle", @"localizedSubtitle", @"bundleIdentifierToLaunch", @"targetContentIdentifier", @"userInfo"]) {
+        id value = RCQAGet(item,key);
+        if (!value) continue;
+        if ([key isEqualToString:@"userInfo"]) {
+            if (![value isKindOfClass:NSDictionary.class]) return nil;
+        } else if (![value isKindOfClass:NSString.class]) return nil;
+        if (![NSPropertyListSerialization propertyList:value isValidForFormat:NSPropertyListBinaryFormat_v1_0]) return nil;
+        row[key] = value;
+    }
+    if (![row[@"type"] length]) return nil;
+    NSData *bytes = [NSPropertyListSerialization dataWithPropertyList:row format:NSPropertyListBinaryFormat_v1_0 options:0 error:nil];
+    if (!bytes || bytes.length > 65536) return nil;
+    return row;
+}
+static BOOL RCQASet(id item, NSString *key, id value) {
+    NSString *name = [NSString stringWithFormat:@"set%@%@:", [[key substringToIndex:1] uppercaseString], [key substringFromIndex:1]];
+    SEL selector = NSSelectorFromString(name);
+    NSMethodSignature *sig = [item methodSignatureForSelector:selector];
+    if (!sig || sig.numberOfArguments != 3 || sig.methodReturnType[0] != 'v' || [sig getArgumentTypeAtIndex:2][0] != '@') return NO;
+    @try { ((void (*)(id,SEL,id))objc_msgSend)(item,selector,value); return YES; }
+    @catch (__unused NSException *e) { return NO; }
+}
 static void RCQAPersist(NSString *bundle, NSArray *items) {
     RCQALoad();
     NSMutableArray *rows = [NSMutableArray array];
     for (id item in items) {
-        @try {
-            NSData *archive = [NSKeyedArchiver archivedDataWithRootObject:item requiringSecureCoding:YES error:nil];
-            if (archive.length && archive.length < 65536) {
-                [rows addObject:@{@"type":RCQAString(RCQAGet(item,@"type")), @"title":RCQAString(RCQAGet(item,@"localizedTitle")), @"archive":archive}];
-            }
-        } @catch (__unused NSException *e) {}
+        NSDictionary *row = RCQASnapshot(item);
+        if (!row) { SRLog(@"Quick Shortcut: payload cannot be saved; previous cache retained"); return; }
+        [rows addObject:row];
     }
-    // Never overwrite a previously saved payload when serialization fails.
-    if (rows.count != items.count || [RCQASaved[bundle] isEqual:rows]) return;
+    if ([RCQASaved[bundle] isEqual:rows]) return;
     RCQASaved[bundle] = rows;
     NSDictionary *snapshot = [RCQASaved copy];
     dispatch_async(RCQASaveQueue, ^{
-        [snapshot writeToFile:RCQAPath atomically:YES];
-        [[NSFileManager defaultManager] setAttributes:@{NSFilePosixPermissions:@0600} ofItemAtPath:RCQAPath error:nil];
+        NSError *error = nil;
+        NSData *data = [NSPropertyListSerialization dataWithPropertyList:snapshot format:NSPropertyListBinaryFormat_v1_0 options:0 error:&error];
+        BOOL ok = data && [data writeToFile:RCQAPath options:NSDataWritingAtomic error:&error];
+        if (ok) [[NSFileManager defaultManager] setAttributes:@{NSFilePosixPermissions:@0600} ofItemAtPath:RCQAPath error:nil];
+        else SRLog(@"Quick Shortcut: save failed domain=%@ code=%ld", error.domain, (long)error.code);
     });
 }
 static NSArray *RCQARestore(NSString *bundle) {
@@ -65,12 +90,17 @@ static NSArray *RCQARestore(NSString *bundle) {
     if (!cls) return @[];
     NSMutableArray *items = [NSMutableArray array];
     for (id row in rows) {
-        if (![row isKindOfClass:NSDictionary.class]) continue;
-        NSData *data = row[@"archive"];
-        if (![data isKindOfClass:NSData.class] || data.length > 65536) continue;
+        if (![row isKindOfClass:NSDictionary.class] || ![row[@"type"] isKindOfClass:NSString.class]) continue;
         @try {
-            id item = [NSKeyedUnarchiver unarchivedObjectOfClass:cls fromData:data error:nil];
-            if (item) [items addObject:item];
+            id item = [[cls alloc] init];
+            BOOL valid = YES;
+            for (NSString *key in @[@"type", @"localizedTitle", @"localizedSubtitle", @"bundleIdentifierToLaunch", @"targetContentIdentifier", @"userInfo"]) {
+                id value = row[key];
+                if (!value) continue;
+                if ([key isEqualToString:@"userInfo"] ? ![value isKindOfClass:NSDictionary.class] : ![value isKindOfClass:NSString.class]) { valid=NO; break; }
+                if (!RCQASet(item,key,value)) { valid=NO; break; }
+            }
+            if (valid && item) [items addObject:item];
         } @catch (__unused NSException *e) {}
         if (items.count >= 32) break;
     }
