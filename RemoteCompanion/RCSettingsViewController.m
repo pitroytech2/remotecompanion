@@ -1,4 +1,3 @@
-#import "RCQuickActionsViewController.h"
 #import "RCSettingsViewController.h"
 #import "RCConfigManager.h"
 #import "RCUITweaker.h"
@@ -171,7 +170,7 @@
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    if (section == 0) return 4; // Master + NFC + WebUI
+    if (section == 0) return 3; // Master + NFC + WebUI
     if (section == 1) return 1; // Integrations Submenu Row
     return 2; // Export, Import
 }
@@ -210,9 +209,6 @@
             [_nfcSwitch addTarget:self action:@selector(nfcToggleChanged:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = _nfcSwitch;
             cell.selectionStyle = UITableViewCellSelectionStyleNone;
-        } else if (indexPath.row == 3) {
-            cell.textLabel.text = @"App Quick Shortcut Diagnostics";
-            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         } else if (indexPath.row == 2) {
             cell.textLabel.text = @"Web UI";
             _webUISwitch = [[UISwitch alloc] init];
@@ -250,9 +246,7 @@
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
 
-    if (indexPath.section == 0 && indexPath.row == 3) {
-        [self.navigationController pushViewController:[RCQuickActionsViewController new] animated:YES];
-    } else if (indexPath.section == 1) {
+    if (indexPath.section == 1) {
         RCIntegrationsViewController *integrationsVC = [[RCIntegrationsViewController alloc] init];
         [self.navigationController pushViewController:integrationsVC animated:YES];
     } else if (indexPath.section == 2) {

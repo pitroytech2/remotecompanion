@@ -11533,7 +11533,7 @@ static NSTimeInterval s_last_camera_launch_notify = 0;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             SRLog(@"Delayed Initialization & Gesture Setup...");
             
-            RCQAInstallProbe();
+            RCQAInstallCatalog();
             load_trigger_config();
             register_config_observer();
             register_simulation_observers();
