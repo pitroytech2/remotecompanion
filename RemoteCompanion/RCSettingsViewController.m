@@ -1,3 +1,4 @@
+#import "RCAppPickerViewController.h"
 #import "RCSettingsViewController.h"
 #import "RCConfigManager.h"
 #import "RCUITweaker.h"
@@ -170,7 +171,7 @@
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    if (section == 0) return 3; // Master + NFC + WebUI
+    if (section == 0) return 4; // Master + NFC + WebUI
     if (section == 1) return 1; // Integrations Submenu Row
     return 2; // Export, Import
 }
@@ -209,6 +210,9 @@
             [_nfcSwitch addTarget:self action:@selector(nfcToggleChanged:) forControlEvents:UIControlEventValueChanged];
             cell.accessoryView = _nfcSwitch;
             cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        } else if (indexPath.row == 3) {
+            cell.textLabel.text = @"Status Bar: Excluded Apps";
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
         } else if (indexPath.row == 2) {
             cell.textLabel.text = @"Web UI";
             _webUISwitch = [[UISwitch alloc] init];
@@ -246,7 +250,23 @@
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
 
-    if (indexPath.section == 1) {
+    if (indexPath.section == 0 && indexPath.row == 3) {
+        RCAppPickerViewController *picker = [RCAppPickerViewController new];
+        picker.title = @"Status Bar: Excluded Apps";
+        picker.suppressAutoPop = YES;
+        picker.selectedBundleIDs = [NSSet setWithArray:[RCConfigManager sharedManager].statusBarExcludedApps];
+        __weak RCAppPickerViewController *weakPicker = picker;
+        picker.onAppSelected = ^(NSString *name, NSString *bundleID) {
+            if (!bundleID.length) return;
+            RCConfigManager *cm = [RCConfigManager sharedManager];
+            NSMutableSet *ids = [NSMutableSet setWithArray:cm.statusBarExcludedApps];
+            if ([ids containsObject:bundleID]) [ids removeObject:bundleID];
+            else [ids addObject:bundleID];
+            cm.statusBarExcludedApps = [[ids allObjects] sortedArrayUsingSelector:@selector(compare:)];
+            weakPicker.selectedBundleIDs = ids;
+        };
+        [self.navigationController pushViewController:picker animated:YES];
+    } else if (indexPath.section == 1) {
         RCIntegrationsViewController *integrationsVC = [[RCIntegrationsViewController alloc] init];
         [self.navigationController pushViewController:integrationsVC animated:YES];
     } else if (indexPath.section == 2) {

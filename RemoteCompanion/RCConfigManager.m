@@ -15,6 +15,15 @@ NSString *const RCConfigChangedNotification = @"RCConfigChangedNotification";
 @end
 
 @implementation RCConfigManager
+- (NSArray<NSString *> *)statusBarExcludedApps {
+    id value = self.config[@"statusBarExcludedApps"];
+    return [value isKindOfClass:[NSArray class]] ? value : @[];
+}
+- (void)setStatusBarExcludedApps:(NSArray<NSString *> *)apps {
+    self.config[@"statusBarExcludedApps"] = [apps copy] ?: @[];
+    [self saveConfig];
+}
+
 
 + (instancetype)sharedManager {
     static RCConfigManager *instance;
