@@ -36,7 +36,7 @@
 - (void)viewDidLoad {
     [super viewDidLoad];
     
-    self.title = @"Select App";
+    if (!self.title) self.title = @"Select App";
     
     // Enable Large Titles
     self.navigationController.navigationBar.prefersLargeTitles = YES;
@@ -112,6 +112,7 @@
     // Let's try standard UIImage private method
     UIImage *icon = [UIImage _applicationIconImageForBundleIdentifier:app.applicationIdentifier format:0 scale:[UIScreen mainScreen].scale];
     cell.imageView.image = icon;
+    cell.accessoryType = [self.selectedBundleIDs containsObject:app.applicationIdentifier] ? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
     
     return cell;
 }
@@ -128,6 +129,7 @@
     }
     
     if (self.suppressAutoPop) {
+        [self.tableView reloadData];
         return; // Caller handles navigation
     }
     

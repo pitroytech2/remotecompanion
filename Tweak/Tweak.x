@@ -1392,6 +1392,21 @@ static BOOL save_blacklist(NSArray *list) {
     return [g_blacklist writeToFile:path atomically:YES];
 }
 
+// Status-bar-only gate; no cached foreground decision.
+static NSString *RCStatusForeground(void) {
+    if (![NSThread isMainThread]) return nil;
+    id sb = [UIApplication sharedApplication];
+    if (![sb respondsToSelector:@selector(_accessibilityFrontMostApplication)]) return nil;
+    id app = [sb _accessibilityFrontMostApplication];
+    return app ? [app bundleIdentifier] : @"com.apple.springboard";
+}
+static BOOL RCStatusExcluded(void) {
+    NSString *bundle = RCStatusForeground();
+    if (!bundle) return YES;
+    id list = g_triggerConfig[@"statusBarExcludedApps"];
+    return [list isKindOfClass:[NSArray class]] && [list containsObject:bundle];
+}
+
 static BOOL RC_IsForegroundAppExcluded() {
     static BOOL cachedResult = NO;
     static NSTimeInterval lastCheck = 0;
@@ -2053,6 +2068,7 @@ static void register_simulation_observers() {
 
 // Execute all actions for a trigger
 void RCExecuteTrigger(NSString *triggerKey) {
+    if ([triggerKey hasPrefix:@"trigger_statusbar_"] && RCStatusExcluded()) return;
     // Check for foreground exclusions (Safety/Blacklist)
     if (RC_IsForegroundAppExcluded()) {
         SRLog(@"Triggers SUPPRESSED for frontmost application (Excluded/Blacklisted)");
@@ -4185,6 +4201,8 @@ static NSString *rc_taptest_status_string(void) {
     return status ?: @"taptest unavailable\n";
 }
 
+#import "RCQuickActions.h"
+
 static NSString *rc_handle_taptest_command(NSString *cleanCmd) {
     NSArray<NSString *> *parts = rc_split_whitespace(cleanCmd);
     NSString *subcommand = parts.count >= 2 ? [parts[1] lowercaseString] : @"status";
@@ -6042,6 +6060,13 @@ static NSString *handle_command(NSString *cmd) {
         return @"Error: Invalid command\n";
     }
     NSString *cleanCmd = [cmd stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if ([cleanCmd hasPrefix:@"quickactions "]) {
+        __block NSString *report;
+        void (^work)(void) = ^{ report = RCQACommand(cleanCmd); };
+        if ([NSThread isMainThread]) work(); else dispatch_sync(dispatch_get_main_queue(), work);
+        return report;
+    }
+
     if (cleanCmd.length == 0) return @"Error: Empty command\n";
     SRLog(@"Received command: %@", cleanCmd);
     
@@ -11069,6 +11094,7 @@ static void setup_background_hid_listener() {
 static NSTimer *g_statusBarHoldTimer = nil;
 static BOOL g_statusBarHoldTriggered = NO;
 static NSString *g_pendingStatusBarTrigger = nil;
+static NSString *g_statusBarOwner = nil;
 
 // Swipe tracking
 static CGFloat g_statusBarSwipeStartX = 0;
@@ -11185,6 +11211,12 @@ static BOOL has_any_bottom_swipe_trigger_enabled() {
     if (event.type == UIEventTypeTouches) {
         UITouch *touch = [[event allTouches] anyObject];
         
+        if (g_statusBarTouchActive && (RCStatusExcluded() || ![g_statusBarOwner isEqualToString:RCStatusForeground()])) {
+            [g_statusBarHoldTimer invalidate];
+            g_statusBarHoldTimer = nil;
+            g_statusBarTouchActive = NO;
+            g_pendingStatusBarTrigger = nil;
+        }
         if (touch && touch.phase == UITouchPhaseBegan) {
             UIWindow *window = nil;
             #pragma clang diagnostic push
@@ -11233,7 +11265,8 @@ static BOOL has_any_bottom_swipe_trigger_enabled() {
 
             SRLog(@"[Debug] TouchBegan phys=(%.1f, %.1f) orient=%ld (T=%d B=%d)", loc.x, loc.y, (long)orientation, inTopRegion, inBottomRegion);
             
-            if (inTopRegion) {
+            if (inTopRegion && !RCStatusExcluded()) {
+                g_statusBarOwner = RCStatusForeground();
                 g_statusBarSwipeStartX = loc.x;
                 g_statusBarSwipeStartY = loc.y;
                 g_statusBarTouchActive = YES;
@@ -11299,6 +11332,11 @@ static BOOL has_any_bottom_swipe_trigger_enabled() {
                         g_statusBarHoldTimer = nil;
                         
                         // Ignore stale timer callbacks (e.g., touch already ended/cancelled).
+                        if (RCStatusExcluded() || ![g_statusBarOwner isEqualToString:RCStatusForeground()]) {
+                            g_statusBarTouchActive = NO;
+                            g_pendingStatusBarTrigger = nil;
+                            return;
+                        }
                         if (!g_statusBarTouchActive || g_statusBarSwipeTriggered || !g_pendingStatusBarTrigger) {
                             return;
                         }
@@ -12478,6 +12516,7 @@ static NSTimeInterval s_last_camera_launch_notify = 0;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             SRLog(@"Delayed Initialization & Gesture Setup...");
             
+            RCQAInstallCatalog();
             load_trigger_config();
             register_config_observer();
             register_simulation_observers();
