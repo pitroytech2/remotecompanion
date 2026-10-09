@@ -1,0 +1,42 @@
+name: Build Rootless
+on:
+  workflow_dispatch:
+  push:
+    branches: ['build/**']
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install ldid dpkg
+      - uses: Randomblock1/theos-action@v1
+      - name: SDK
+        run: |
+          if [ ! -d "$THEOS/sdks/iPhoneOS16.5.sdk" ]; then
+            curl -fsSL https://github.com/theos/sdks/archive/refs/heads/master.zip -o /tmp/sdks.zip
+            unzip -q /tmp/sdks.zip -d /tmp/sdks
+            cp -R /tmp/sdks/sdks-master/iPhoneOS16.5.sdk "$THEOS/sdks/"
+          fi
+      - name: Build unified app and tweak
+        run: |
+          set -eu
+          VERSION=$(sed -n 's/^Version: *//p' Tweak/control)
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" RemoteCompanion/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" RemoteCompanion/Info.plist
+          make -C RemoteCompanion stage THEOS_PACKAGE_SCHEME= TARGET=iphone:clang:16.5:14.0
+          mkdir -p Tweak/layout/Applications Tweak/layout/usr/bin "Tweak/layout/Library/Application Support/RemoteCompanion"
+          rm -rf Tweak/layout/Applications/RemoteCompanion.app
+          cp -R RemoteCompanion/.theos/_/Applications/RemoteCompanion.app Tweak/layout/Applications/
+          cp rc Tweak/layout/usr/bin/rc
+          chmod +x Tweak/layout/usr/bin/rc
+          cp rc_webui.html "Tweak/layout/Library/Application Support/RemoteCompanion/"
+          make -C Tweak package THEOS_PACKAGE_SCHEME=rootless TARGET=iphone:clang:16.5:15.0
+          dpkg-deb -I Tweak/packages/*.deb
+          dpkg-deb -c Tweak/packages/*.deb
+          shasum -a 256 Tweak/packages/*.deb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: remotecompanion-rootless
+          path: Tweak/packages/*.deb
